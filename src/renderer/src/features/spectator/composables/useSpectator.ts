@@ -25,6 +25,16 @@ const SLOT_KEYS: Record<number, string> = {
 
 const STORAGE_KEY = 'spectator-slots'
 const PRE_COMMAND_KEY = 'spectator-precommand'
+const BY_ACCOUNT_KEY = 'spectator-bind-by-accountid'
+const STEAMID64_BASE = 76561197960265728n
+
+const accountIdOf = (steamid: string): string | null => {
+  try {
+    return (BigInt(steamid) - STEAMID64_BASE).toString()
+  } catch {
+    return null
+  }
+}
 
 export function useSpectator() {
   const gameState = ref<CSGORaw | null>(null)
@@ -33,6 +43,9 @@ export function useSpectator() {
   )
 
   const preCommand = ref(localStorage.getItem(PRE_COMMAND_KEY) ?? '')
+  // Bind by Steam account id instead of name: works for names starting with a digit,
+  // with spaces or special characters. Off by default until verified on your CS2 build.
+  const bindByAccountId = ref(localStorage.getItem(BY_ACCOUNT_KEY) === 'true')
 
   const telnetHost = ref('127.0.0.1')
   const telnetPort = ref(2020)
@@ -83,6 +96,10 @@ export function useSpectator() {
 
   watch(preCommand, (v) => {
     localStorage.setItem(PRE_COMMAND_KEY, v)
+  })
+
+  watch(bindByAccountId, (v) => {
+    localStorage.setItem(BY_ACCOUNT_KEY, String(v))
   })
 
   const livePlayers = computed((): LivePlayer[] => {
@@ -159,9 +176,10 @@ export function useSpectator() {
       if (!name) continue
       const key = SLOT_KEYS[slot]
       const aliasName = `player${key}`
-      const body = pre
-        ? `${pre}; spec_player ${name}; spec_mode 1`
-        : `spec_player ${name}; spec_mode 1`
+      const steamid = livePlayers.value.find((p) => p.name === name)?.steamid
+      const accountId = bindByAccountId.value && steamid ? accountIdOf(steamid) : null
+      const target = accountId ? `spec_player_by_accountid ${accountId}` : `spec_player ${name}`
+      const body = pre ? `${pre}; ${target}; spec_mode 1` : `${target}; spec_mode 1`
       lines.push(`alias ${aliasName} "${body}"`)
       lines.push(`bind ${key} ${aliasName}`)
     }
@@ -271,7 +289,9 @@ export function useSpectator() {
   }
 
   const numericNameWarnings = computed(() =>
-    Object.values(slots.value).filter((name): name is string => !!name && /^\d/.test(name))
+    bindByAccountId.value
+      ? []
+      : Object.values(slots.value).filter((name): name is string => !!name && /^\d/.test(name))
   )
 
   const fillFromCS2 = () => {
@@ -318,6 +338,7 @@ export function useSpectator() {
     allPlayerNames,
     sideForName,
     preCommand,
+    bindByAccountId,
     previewCommand,
     numericNameWarnings,
     saveSettings,

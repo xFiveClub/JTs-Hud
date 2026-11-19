@@ -35,3 +35,6 @@ export const getBuiltinHudDir = (): string => {
   // Fallback to development path if none exist (will error at runtime if actually needed)
   return path.join(__dirname, '../../resources/default-hud')
 }
+
+/** Bundled browser-source overlays (e.g. the AI Director overlay) */
+export const getOverlaysDir = (): string => path.join(path.dirname(getBuiltinHudDir()), 'overlays')

@@ -1,3 +1,4 @@
+import './testEnv'
 import { app, BrowserWindow, net } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { createWindow } from './window'
@@ -48,7 +49,7 @@ app.whenReady().then(() => {
 async function checkForUpdate(): Promise<void> {
   try {
     const response = await net.fetch(
-      'https://api.github.com/repos/JohnTimmermann/JTs-Hud-Manager/releases/latest',
+      'https://api.github.com/repos/JohnTimmermann/JTs-Hud/releases/latest',
       { headers: { 'User-Agent': 'jts-hud-manager-electron' } }
     )
     if (!response.ok) return

@@ -1,11 +1,12 @@
 import { shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import path from 'path'
 import fs from 'fs'
-import net from 'net'
 import { enforceOverlayOnTop } from './overlayUtils'
 import { registerHudKeybinds, unregisterHudKeybinds } from './shortcuts'
 import { getHudsDir, getBuiltinHudDir } from './paths'
 import { setActiveHudId } from './server/server'
+import { netcon } from './server/integrations/netcon'
+import { registerDirectorIpc } from './server/director/director.ipc'
 
 const GSI_CFG_CONTENT = `"JTS_HUD_MANAGER"
 {
@@ -165,7 +166,7 @@ export function registerIpcHandlers(): void {
   })
 
   // Send one or more console commands to CS2 via telnet.
-  // Commands separated by ; are sent sequentially with a small delay between each.
+  // Uses the shared netcon connection so it never conflicts with the AI Director.
   ipcMain.handle(
     'send-telnet',
     (
@@ -175,36 +176,8 @@ export function registerIpcHandlers(): void {
         host = '127.0.0.1',
         port = 2020
       }: { command: string; host?: string; port?: number }
-    ): Promise<void> => {
-      return new Promise((resolve, reject) => {
-        const socket = net.createConnection({ host, port: Number(port) })
-        const timeoutId = setTimeout(() => socket.destroy(new Error('Telnet timeout')), 4000)
-        socket.setTimeout(4000)
-
-        socket.on('connect', () => {
-          const lines = String(command)
-            .split('\n')
-            .map((l) => l.trim())
-            .filter(Boolean)
-          let i = 0
-          const writeNext = () => {
-            if (i >= lines.length) {
-              clearTimeout(timeoutId)
-              socket.end()
-              resolve()
-              return
-            }
-            socket.write(`${lines[i++]}\r\n`, () => setTimeout(writeNext, 10))
-          }
-          writeNext()
-        })
-
-        socket.on('timeout', () => socket.destroy(new Error('Telnet timeout')))
-        socket.on('error', (err) => {
-          clearTimeout(timeoutId)
-          reject(err)
-        })
-      })
-    }
+    ): Promise<void> => netcon.send(String(command), host, Number(port))
   )
+
+  registerDirectorIpc()
 }

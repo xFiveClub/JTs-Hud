@@ -6,6 +6,9 @@ import { TeamService } from '../domains/teams/team.service'
 import { PlayerRepository } from '../domains/players/player.repository'
 import { getSettings } from '../domains/settings/settings.routes'
 import { RoundData } from '../domains/matches/match.types'
+import { director } from '../director/director'
+import { gsiRecorder, gsiReplayer, onRecorderStatus } from './gsiRecorder'
+import { loadAllZones } from '../director/zones'
 
 const matchService = new MatchService()
 const teamService = new TeamService()
@@ -92,8 +95,104 @@ export const setSpectatorSlots = (slots: Record<number, string>): void => {
   }
 }
 
+// Process one GSI payload: fix it up, feed backend listeners and the director, broadcast.
+// Used by the live HTTP endpoint and by the recording replayer.
+export const processGSI = (io: Server, body: any, now = Date.now()): void => {
+  // --- Dead player position preservation ---
+  // Cache: steamid -> last death position
+  if (!global.deadPlayerPositions) global.deadPlayerPositions = {}
+  const deadPlayerPositions = global.deadPlayerPositions
+
+  if (body?.allplayers) {
+    for (const steamid of Object.keys(body.allplayers)) {
+      const player = body.allplayers[steamid]
+
+      // Player is dead
+      if (player.state && player.state.health === 0) {
+        // If not already cached, cache their current position
+        if (!deadPlayerPositions[steamid]) {
+          deadPlayerPositions[steamid] = player.position
+        }
+
+        // Overwrite position with cached death position
+        player.position = deadPlayerPositions[steamid]
+      } else {
+        // Player is alive, clear cache
+        if (deadPlayerPositions[steamid]) {
+          delete deadPlayerPositions[steamid]
+        }
+      }
+    }
+  }
+  // Fix player observer_slot: CS2 raw data sends 0–10 but HUDs expect 1–10 with 10 wrapping to 0
+  if (body?.allplayers) {
+    for (const key of Object.keys(body.allplayers)) {
+      const player = body.allplayers[key]
+      if (typeof player?.observer_slot === 'number') {
+        player.observer_slot = player.observer_slot + 1 === 10 ? 0 : player.observer_slot + 1
+      }
+    }
+  }
+
+  lastGSIState = body
+
+  // Build payload for for HUDs
+  let hudPayload = body
+  const needsCoachFilter = body?.allplayers && coachSteamIds.size > 0
+  const needsSlotRemap = body?.allplayers && nameToSlot.size > 0
+
+  if (needsCoachFilter || needsSlotRemap) {
+    let remapped = { ...body.allplayers }
+
+    // Remove coaches
+    if (needsCoachFilter) {
+      for (const steamid of Object.keys(remapped)) {
+        if (coachSteamIds.has(steamid)) delete remapped[steamid]
+      }
+    }
+
+    // Remap observer_slot values to match custom slot assignments
+    if (needsSlotRemap) {
+      for (const steamid of Object.keys(remapped)) {
+        const player = remapped[steamid]
+        if (player?.name && nameToSlot.has(player.name)) {
+          remapped[steamid] = { ...player, observer_slot: nameToSlot.get(player.name) }
+        }
+      }
+
+      // Rebuild allplayers sorted by the new observer_slot
+      const slotOrder = (s: number) => (s === 0 ? 10 : s)
+      remapped = Object.fromEntries(
+        Object.entries(remapped).sort(([, a], [, b]) => {
+          const aSlot = (a as any)?.observer_slot ?? 99
+          const bSlot = (b as any)?.observer_slot ?? 99
+          return slotOrder(aSlot) - slotOrder(bSlot)
+        })
+      )
+    }
+
+    hudPayload = { ...body, allplayers: remapped }
+  }
+
+  // Feed raw payload into CSGOGSI so backend listeners fire
+  GSI.digest(body)
+
+  // AI Director works on the raw payload (real steamids, coaches excluded)
+  try {
+    director.onGameState(body, coachSteamIds, now)
+  } catch (err) {
+    console.error('[Director] tick failed:', err)
+  }
+
+  // Vue UI gets the full payload (coaches visible in LiveView)
+  io.except('huds').emit('update', body)
+  // HUDs get filtered payload
+  io.to('huds').emit('update', hudPayload)
+}
+
 export const setupGSI = (io: Server) => {
   const router = Router()
+  director.attach(io)
 
   // Sync teams whenever the map changes (reverseSide may differ per map)
   GSI.on('data', (data) => {
@@ -273,90 +372,11 @@ export const setupGSI = (io: Server) => {
   // --- GSI HTTP endpoint ---
   router.post('/input', (req: Request, res: Response) => {
     try {
-      // --- Dead player position preservation ---
-      // Cache: steamid -> last death position
-      if (!global.deadPlayerPositions) global.deadPlayerPositions = {}
-      const deadPlayerPositions = global.deadPlayerPositions
-
-      if (req.body?.allplayers) {
-        for (const steamid of Object.keys(req.body.allplayers)) {
-          const player = req.body.allplayers[steamid]
-
-          // Player is dead
-          if (player.state && player.state.health === 0) {
-            // If not already cached, cache their current position
-            if (!deadPlayerPositions[steamid]) {
-              deadPlayerPositions[steamid] = player.position
-            }
-
-            // Overwrite position with cached death position
-            player.position = deadPlayerPositions[steamid]
-          } else {
-            // Player is alive, clear cache
-            if (deadPlayerPositions[steamid]) {
-              delete deadPlayerPositions[steamid]
-            }
-          }
-        }
+      // While a recording is being replayed, live data would corrupt the session
+      if (!gsiReplayer.active) {
+        gsiRecorder.capture(req.body)
+        processGSI(io, req.body)
       }
-      // Fix player observer_slot: CS2 raw data sends 0–10 but HUDs expect 1–10 with 10 wrapping to 0
-      if (req.body?.allplayers) {
-        for (const key of Object.keys(req.body.allplayers)) {
-          const player = req.body.allplayers[key]
-          if (typeof player?.observer_slot === 'number') {
-            player.observer_slot = player.observer_slot + 1 === 10 ? 0 : player.observer_slot + 1
-          }
-        }
-      }
-
-      lastGSIState = req.body
-
-      // Build payload for for HUDs
-      let hudPayload = req.body
-      const needsCoachFilter = req.body?.allplayers && coachSteamIds.size > 0
-      const needsSlotRemap = req.body?.allplayers && nameToSlot.size > 0
-
-      if (needsCoachFilter || needsSlotRemap) {
-        let remapped = { ...req.body.allplayers }
-
-        // Remove coaches
-        if (needsCoachFilter) {
-          for (const steamid of Object.keys(remapped)) {
-            if (coachSteamIds.has(steamid)) delete remapped[steamid]
-          }
-        }
-
-        // Remap observer_slot values to match custom slot assignments
-        if (needsSlotRemap) {
-          for (const steamid of Object.keys(remapped)) {
-            const player = remapped[steamid]
-            if (player?.name && nameToSlot.has(player.name)) {
-              remapped[steamid] = { ...player, observer_slot: nameToSlot.get(player.name) }
-            }
-          }
-
-          // Rebuild allplayers sorted by the new observer_slot
-          const slotOrder = (s: number) => (s === 0 ? 10 : s)
-          remapped = Object.fromEntries(
-            Object.entries(remapped).sort(([, a], [, b]) => {
-              const aSlot = (a as any)?.observer_slot ?? 99
-              const bSlot = (b as any)?.observer_slot ?? 99
-              return slotOrder(aSlot) - slotOrder(bSlot)
-            })
-          )
-        }
-
-        hudPayload = { ...req.body, allplayers: remapped }
-      }
-
-      // Feed raw payload into CSGOGSI so backend listeners fire
-      GSI.digest(req.body)
-
-      // Vue UI gets the full payload (coaches visible in LiveView)
-      io.except('huds').emit('update', req.body)
-      // HUDs get filtered payload
-      io.to('huds').emit('update', hudPayload)
-
       // CS2 expects a 200 OK so it doesn't throttle the GSI engine
       res.status(200).send('OK')
     } catch (error) {
@@ -364,6 +384,27 @@ export const setupGSI = (io: Server) => {
       res.status(500).send('Error')
     }
   })
+
+  // --- Look-ahead endpoint ---
+  // Optional second GSI feed from a client WITHOUT tv_delay (e.g. an in-server observer),
+  // while the broadcast observer watches through GOTV with delay. The director uses it
+  // to see fights before they appear on the delayed broadcast.
+  router.post('/lookahead', (req: Request, res: Response) => {
+    try {
+      if (!gsiReplayer.active) director.onLookahead(req.body, coachSteamIds)
+      res.status(200).send('OK')
+    } catch (error) {
+      console.error('Error processing look-ahead GSI:', error)
+      res.status(500).send('Error')
+    }
+  })
+
+  // Recorder/replayer state for the Director page
+  onRecorderStatus((s) => io.except('huds').emit('recorder:status', s))
+  loadAllZones().catch((err) => console.error('[Director] Failed to load map zones:', err))
+
+  // Replays feed recorded payloads through the exact same pipeline as live data
+  gsiReplayer.setSink((payload, virtualNow) => processGSI(io, payload, virtualNow))
 
   // Populate coach filter and Sync team data on startup
   syncGSITeams()

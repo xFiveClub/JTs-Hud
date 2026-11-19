@@ -1,16 +1,34 @@
-# JTs Hud (Formally OpenHud)
+# JTs Hud · AI Director Edition
 
-A simple open-source Counter-Strike 2 Custom Hud and Hud manager. Manage overlays, players, teams, and matches. This project is passively updated, and community PRs are much appreciated!
+A Counter-Strike 2 custom HUD and HUD manager (players, teams, matches, overlays) **plus an AI Director addon**: an automatic observer that moves the CS2 spectator camera like a professional broadcast observer, so a match can be produced without anyone on the observer seat.
+
+> **This is a community fork** of [JohnTimmermann/JTs-Hud](https://github.com/JohnTimmermann/JTs-Hud) (formerly OpenHud), maintained by **xfiveclub**. All the original HUD manager features are John Timmermann's work; this fork adds the [AI Director](#ai-director) and related changes listed in [Changes in this fork](#changes-in-this-fork). It is not the official release. Report issues with the AI Director here, and issues with the base HUD manager [upstream](https://github.com/JohnTimmermann/JTs-Hud/issues).
 
 - Tech: Electron, Vue, Typescript, NodeJS/Express, Socketio, SQLite3
+- License: [GPL-3.0](LICENSE), same as upstream
 
-_Disclaimer: A small portion of this is ai generated, and while I don't entirely love the idea of vibe coding, it helped in areas that I struggled to understand. I have tried to comment the places that were generated and that could lead to some bugs_
+_Disclaimer from the original author: A small portion of this is ai generated, and while I don't entirely love the idea of vibe coding, it helped in areas that I struggled to understand. I have tried to comment the places that were generated and that could lead to some bugs._ The AI Director addon was also written with AI assistance and is covered by unit and end-to-end tests.
 
-## Have questions? Join the community [Discord](https://discord.gg/HApB9HyaWM)!
+## Have questions about the base HUD manager? Join the original community [Discord](https://discord.gg/HApB9HyaWM)!
 
 ![Horizontal](.github/images/hero.png)
 
 ![Vertical](.github/images/hero2.png)
+
+---
+
+## What's new in this fork
+
+**AI Director** — automatic observer for CS2 broadcasts:
+
+- 🎥 **Moves the camera for you** over telnet: follows fights, cuts to the killer, jumps to plants/defuses, stays on clutches, and never cuts away mid-duel.
+- 🧠 **Optional AI layer** with any OpenAI-compatible API (OpenAI, OpenRouter, Ollama, LM Studio...): reads each round and decides who the story is about.
+- 📺 **Broadcast overlay** for OBS/vMix: "player to watch" card, clutch banner, execute alert and the AI's read of the round.
+- ⏪ **Record & replay GSI** to tune the director (or test HUDs) without the game running.
+- 🗺️ **Map zones** (callouts), **utility execute detection** and **look-ahead** anticipation for delayed GOTV broadcasts.
+- ⌨️ **Operator shortcuts**: start/stop, lock on a player, force the next cut, plus automatic back-off when you take the camera yourself.
+
+![AI Director](.github/images/ai-director.png)
 
 ---
 
@@ -23,14 +41,27 @@ _Disclaimer: A small portion of this is ai generated, and while I don't entirely
 - **Keybinds**
 - **Live view** - see the current CS2 game states and manage players mid-match
 - **Spectator Binds tool** - Visually reorder and rebind observer slots, helps when hiding coaches from the overlay
+- **AI Director** - automatic observer that moves the CS2 camera like a pro observer, with an optional AI layer (any OpenAI-compatible API) and a broadcast overlay
 
 ---
 
 ## Installation
 
-1. Download the latest unpacked version or `.exe` installer from the [Releases](../../releases/latest) page.
+1. Download the latest unpacked version or `.exe` installer from this repository's [Releases](../../releases/latest) page.
 
 _Note: While the releases are for windows, electron builder does allow for linux and mac if needed_
+
+### Building from source
+
+Requires Node.js 22+.
+
+```bash
+git clone https://github.com/xfiveclub/JTs-Hud.git
+cd JTs-Hud
+npm install          # also downloads Electron and rebuilds sqlite3 for it
+npm run dev          # run the app in development mode
+npm run build:win    # or build:mac / build:linux / build:unpack
+```
 
 ---
 
@@ -82,6 +113,9 @@ These shortcuts are always active while the hud manager is running, regardless o
 | -------- | ----------------------------------------------------------------- |
 | `Alt+F`  | Force-refresh all connected HUD overlays                          |
 | `Alt+R`  | Toggle reverse sides for the current map in the active match veto |
+| `Alt+D`  | Start / stop the AI Director                                      |
+| `Alt+L`  | AI Director: lock the camera on the current player (toggle)       |
+| `Alt+N`  | AI Director: cut to the next best player now                      |
 
 ### Default HUD Keybinds
 
@@ -203,7 +237,146 @@ This is a **VISUSAL** change, we are not actually modifying the game in anyway o
 
 > The **Command Preview** panel shows exactly what commands will be sent before you apply.
 
+> **Names starting with a number** can't be targeted by `spec_player`. Enable **Bind by Steam account id** (below the pre-bind command) to bind with `spec_player_by_accountid` instead. If the camera doesn't move after applying, your CS2 build doesn't support it: turn the option off.
+
 ![Spectator Binds Tool](.github/images/spectator-binds.png)
+
+---
+
+## AI Director
+
+An automatic observer. It reads the live GSI data, decides who the camera should follow and moves the CS2 spectator camera over telnet (`-netconport`).
+
+```
+            GSI                                   telnet (-netconport)
+  CS2  ───────────────►  JTs Hud  ─────────────────────────────────────►  CS2 camera
+(observer)            AI Director  ──► HUD + Director overlay (OBS)
+                           │
+                           └── every few seconds (optional) ──► LLM: "who is this round about?"
+```
+
+### Quick start
+
+1. Install the GSI cfg as usual (see [CS2 Game State Integration Setup](#cs2-game-state-integration-setup)).
+2. Add `-netconport 2020` to the CS2 launch options (same as Spectator Binds) and **spectate** the match (GOTV or in-server observer).
+3. Open **AI Director** in the sidebar and press **Start Director** (or `Alt+D`).
+4. If the camera doesn't move, try another **Switch command** preset: _By Steam account id_ → _By player name_ → _By observer slot_. The page shows a warning when CS2 doesn't follow a command.
+
+### How it decides
+
+**Rule engine (real time, no AI needed).** On every GSI update each alive player gets an interest score. The page shows every score and why.
+
+| Signal                                       | Weight       |
+| -------------------------------------------- | ------------ |
+| Taking or dealing damage (a real fight)      | very high    |
+| Defusing / planting                          | +70 / +60    |
+| Clutch (1vX)                                 | +30 and up   |
+| Enemies close and looking at each other      | up to +44    |
+| Just got a kill                              | up to +25    |
+| In the area of a utility execute             | up to +22    |
+| AWP out, carrying the bomb, multi-kill round | small bonus  |
+| Far from the action, flashed                 | ×0.75 / ×0.6 |
+| AI layer weights                             | ×0.5 – ×2    |
+
+Cuts follow broadcast rules:
+
+- a shot lasts at least **2.5 s**, unless the player dies or a plant/defuse starts elsewhere;
+- **never cut away from a player who is in a fight**;
+- when the player on camera dies, hold ~0.9 s, then **cut to the killer**;
+- a new player must be clearly more interesting (**+35%**) for a moment before switching, so the camera never flickers;
+- rotate after 12 s on a quiet shot; during freezetime show the AI's pick or the top fragger.
+
+All timings are configurable on the AI Director page.
+
+**AI layer (optional).** At freezetime, every ~10 s and on key moments (plant, execute, clutch) an LLM receives a compact summary of the round (score, economy, weapons, who is grouped with whom and where, recent events) and returns per-player weights, a team focus and a one-line storyline. It **never picks individual cuts**: a model call takes 0.5–3 s and a duel is over before that. If the AI is slow or fails, the rule engine keeps working.
+
+| Provider          | Base URL                       | Notes                                                   |
+| ----------------- | ------------------------------ | ------------------------------------------------------- |
+| OpenAI            | `https://api.openai.com/v1`    | Use a fast/small model: latency matters more than depth |
+| OpenRouter        | `https://openrouter.ai/api/v1` | Any model they host                                     |
+| Ollama (local)    | `http://localhost:11434/v1`    | No API key needed                                       |
+| LM Studio (local) | `http://localhost:1234/v1`     | No API key needed                                       |
+
+The client adapts automatically to endpoints that reject `max_tokens`, `temperature` or `response_format`.
+
+> **Privacy:** when the AI layer is on, the round summary (player and team names, stats, money, weapons, zones and recent events) is sent to the provider you configure. Use a local model if that is a concern. The API key is stored encrypted with the OS keychain, only travels over Electron IPC (never the local HTTP API) and is only sent to the base URL you set.
+
+**Operator control.**
+
+| Shortcut | Action                                                         |
+| -------- | -------------------------------------------------------------- |
+| `Alt+D`  | Start / stop the director                                      |
+| `Alt+L`  | Lock the camera on the current player (released when they die) |
+| `Alt+N`  | Cut to the next best player now                                |
+
+If you change the camera yourself, the director detects it and backs off for 8 s. Switches CS2 makes on its own (deaths, round changes) don't count. Shortcuts work while CS2 has focus.
+
+### Director overlay
+
+A separate browser source to put **on top of the HUD** in OBS/vMix: `http://localhost:1349/overlays/director/` at 1920×1080. Every widget can be toggled from the AI Director page.
+
+![Director overlay](.github/images/ai-director-overlay.png)
+
+| Query param | Default             | Purpose                                                        |
+| ----------- | ------------------- | -------------------------------------------------------------- |
+| `preview=1` | —                   | Show sample widgets to position the source without a live game |
+| `ct` / `t`  | `5d9cec` / `e8b04a` | Team colours (hex, without `#`)                                |
+| `top`       | `150`               | Vertical offset of the clutch / execute banner (px)            |
+| `bottom`    | `250`               | Offset of the storyline and camera tag from the bottom (px)    |
+| `scale`     | `1`                 | Overall size                                                   |
+
+### Record & replay
+
+Press **● Record** to save the GSI of a match (or of a demo played in CS2), then replay it later at 0.5×–8× without the game. Replays go through the same pipeline as live data (HUD, Live view, director). By default the director runs in **simulation**, deciding cuts inside the app without touching the real CS2 camera, which makes replays the way to tune the director. Recordings are gzipped JSON Lines in the app's `gsi-recordings` folder.
+
+### Map zones
+
+No callouts ship by default. To add one, spectate a player standing on the spot (live or in a replay), pick them, type the name (e.g. _Banana_, _A site_) and save. The AI then reads "stack @ Banana" instead of coordinates, and executes are labelled with the zone ("Execute · B site"). Zones can be exported and imported as JSON to share them.
+
+### Look-ahead (anticipation)
+
+Professional observers watch through GOTV with `tv_delay`, so they know what is about to happen. To do the same:
+
+1. Run a second CS2 client **without delay** (e.g. an in-server spectator, possibly on another PC).
+2. On the AI Director page, enter this PC's address and **Copy look-ahead cfg**. Save it as `gamestate_integration_jts_lookahead.cfg` in that client's `csgo/cfg` folder.
+3. Set **Broadcast tv_delay** to the server's `tv_delay`.
+
+The director then sees fights before they air and moves the camera there ~1.5 s early.
+
+### Known limitations
+
+- Line of sight isn't part of GSI: "enemies close" is estimated from distance, height and view direction, so walls can fool it. Real damage always wins.
+- `spec_player_by_accountid` may not exist on every CS2 build. Use the _player name_ preset if the camera doesn't follow.
+- The scoring weights are a first calibration. Recordings of real matches are the best way to tune them; feedback and PRs are welcome.
+
+---
+
+## Local API security
+
+Since this fork, the local server (port `1349`) and the GSI listener (`23415`) no longer accept requests from any website. Allowed are: the app itself (per-session token), pages served by the server itself (HUDs and overlays, also from another PC on the LAN), `localhost` on any port (HUD dev servers) and non-browser clients such as CS2. **If you host a custom HUD on another domain and call the API from it, it will now be rejected.**
+
+---
+
+## Development
+
+```bash
+npm run typecheck    # main + renderer
+npm test             # unit tests (Vitest): director rules, AI client, GSI recorder, zones, origin guard
+npm run test:e2e     # builds the app and runs the Electron smoke test (Playwright)
+```
+
+CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the end-to-end smoke test on every push and pull request.
+
+Main code locations for the addon:
+
+| Path                                          | What                                                     |
+| --------------------------------------------- | -------------------------------------------------------- |
+| `src/main/server/director/`                   | Rule engine, director, AI client, config, map zones, IPC |
+| `src/main/server/integrations/netcon.ts`      | Shared telnet connection to CS2                          |
+| `src/main/server/integrations/gsiRecorder.ts` | GSI recorder / replayer                                  |
+| `src/main/server/middleware/originGuard.ts`   | Local API origin policy                                  |
+| `resources/overlays/director/`                | Director overlay (browser source)                        |
+| `src/renderer/src/views/DirectorView.vue`     | AI Director page                                         |
 
 ---
 
@@ -212,3 +385,20 @@ This is a **VISUSAL** change, we are not actually modifying the game in anyway o
 All data (players, teams, matches, HUD files) is stored locally on your machine. which can be found at: `C:\Users\USER\AppData\Roaming\jts-hud-manager\`
 
 The huds directory would be at: `C:\Users\jtmyt\jthm-huds`
+
+---
+
+## Changes in this fork
+
+Modified by xfiveclub, November 2026, relative to [JohnTimmermann/JTs-Hud](https://github.com/JohnTimmermann/JTs-Hud) v7.13.26:
+
+- **Added** the AI Director: rule engine, optional LLM layer, director overlay, GSI record & replay, map zones, utility execute detection, look-ahead feed (`/cs2/lookahead`) and operator shortcuts (`Alt+D`, `Alt+L`, `Alt+N`).
+- **Added** an option in Spectator Binds to bind by Steam account id, which works for player names that start with a number.
+- **Changed** Spectator Binds and the director to share a single persistent telnet connection.
+- **Changed** the local servers from allowing any origin (CORS `*`) to an origin policy (see [Local API security](#local-api-security)).
+- **Changed** the update check and GitHub links from the old `JTs-Hud-Manager` name to `JTs-Hud`.
+- **Added** unit tests (Vitest), an Electron end-to-end smoke test (Playwright) and CI.
+
+## License
+
+GPL-3.0, see [LICENSE](LICENSE). Original work © John Timmermann and contributors; AI Director addon © xfiveclub and contributors. Both are distributed under the same license.

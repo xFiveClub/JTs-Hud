@@ -2,6 +2,7 @@ import { globalShortcut } from 'electron'
 import { io } from './server/server'
 import { getLastGSIState } from './server/integrations/gsi'
 import { MatchService } from './server/domains/matches/match.service'
+import { director } from './server/director/director'
 
 const matchService = new MatchService()
 
@@ -32,6 +33,8 @@ export function unregisterHudKeybinds(): void {
 }
 
 export function registerShortcuts(): void {
+  registerDirectorShortcuts()
+
   // Global Alt+F: Refresh HUDs
   globalShortcut.register('Alt+F', () => {
     io.emit('refreshHUD')
@@ -56,6 +59,25 @@ export function registerShortcuts(): void {
       console.error('Alt+R: Failed to toggle reverseSide —', err.message)
     }
   })
+}
+
+// AI Director shortcuts. Registered globally so they work while CS2 has focus.
+const DIRECTOR_SHORTCUTS: [string, string, () => unknown][] = [
+  ['Alt+D', 'start/stop the AI Director', () => director.toggle()],
+  ['Alt+L', 'lock the camera on the current player', () => director.toggleLock()],
+  ['Alt+N', 'cut to the next best player now', () => director.requestNextCut()]
+]
+
+export function registerDirectorShortcuts(): void {
+  for (const [bind, what, fn] of DIRECTOR_SHORTCUTS) {
+    const ok = globalShortcut.register(bind, () => {
+      Promise.resolve(fn()).catch((err) => console.error(`${bind} (${what}) failed:`, err))
+    })
+    if (!ok)
+      console.warn(
+        `Director shortcut [${bind}] (${what}) could not be registered (already in use?)`
+      )
+  }
 }
 
 export function unregisterShortcuts(): void {

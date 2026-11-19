@@ -8,6 +8,7 @@ import HudPanelView from '../views/HudPanelView.vue'
 import LiveView from '../views/LiveView.vue'
 import HudsView from '../views/HudsView.vue'
 import SpectatorView from '../views/SpectatorView.vue'
+import DirectorView from '../views/DirectorView.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -22,6 +23,7 @@ const router = createRouter({
     { path: '/huds',              name: 'Huds',        component: HudsView      },
     { path: '/huds/:hudId/panel', name: 'HudPanel',    component: HudPanelView  },
     { path: '/spectator',         name: 'Spectator',   component: SpectatorView },
+    { path: '/director',          name: 'Director',    component: DirectorView  },
   ],
 })
 

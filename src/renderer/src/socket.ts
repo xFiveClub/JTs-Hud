@@ -6,4 +6,6 @@ export const socket = io(`http://localhost:${port}`, {
   autoConnect: true,
   reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,
+  // Lets the server accept the packaged app (Origin "null"); see originGuard.ts
+  query: { token: window.api?.appToken ?? '' },
 });

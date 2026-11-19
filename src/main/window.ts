@@ -2,6 +2,7 @@ import { BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { APP_TOKEN } from './server/middleware/originGuard'
 
 export function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -14,7 +15,9 @@ export function createWindow(): void {
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      // Per-run token so the local API can tell the app apart from random web pages
+      additionalArguments: [`--jts-token=${APP_TOKEN}`]
     }
   })
 

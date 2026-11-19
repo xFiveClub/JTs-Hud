@@ -13,6 +13,7 @@ import RefreshIcon from '@renderer/assets/icons/RefreshIcon.vue';
 import BaseButton from '@renderer/components/base/BaseButton.vue';
 import BaseBadge from '@renderer/components/base/BaseBadge.vue';
 import BaseInput from '@renderer/components/base/BaseInput.vue';
+import BaseCheckbox from '@renderer/components/base/BaseCheckbox.vue';
 
 const {
   gameState,
@@ -33,6 +34,7 @@ const {
   allPlayerNames,
   sideForName,
   preCommand,
+  bindByAccountId,
   previewCommand,
   numericNameWarnings,
   saveSettings,
@@ -178,6 +180,16 @@ const {
             placeholder="e.g. reset_cams"
             size="md"
           />
+          <div class="pt-2 border-t border-zinc-700">
+            <BaseCheckbox
+              v-model="bindByAccountId"
+              label="Bind by Steam account id (spec_player_by_accountid)"
+            />
+            <p class="text-xs text-zinc-500 mt-1">
+              Fixes names that start with a number or contain spaces. Players must be in the live game when you apply.
+              If the camera doesn't move after applying, your CS2 build doesn't support it: turn this off.
+            </p>
+          </div>
         </div>
       </div>
 

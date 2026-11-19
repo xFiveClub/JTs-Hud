@@ -3,7 +3,6 @@ dotenv.config() // Load .env variables before anything else
 
 import './database/sqlite'
 import express from 'express'
-import cors from 'cors'
 
 import { createServer } from 'http'
 import { Server } from 'socket.io'
@@ -17,8 +16,9 @@ import createHudRouter from './domains/huds/hud.routes'
 import settingsRoutes from './domains/settings/settings.routes'
 import spectatorRoutes from './domains/spectator/spectator.routes'
 import { uploadsPath } from './utils/multer'
-import { getHudsDir, getBuiltinHudDir } from '../paths'
+import { getHudsDir, getBuiltinHudDir, getOverlaysDir } from '../paths'
 import { signedHudMiddleware } from './middleware/signedHudMiddleware'
+import { originGuard, socketAllowRequest } from './middleware/originGuard'
 
 // Track the currently active HUD id so the socket register handler can look up correct HUD
 let activeHudId: string | null = null
@@ -31,16 +31,14 @@ export const getActiveHudId = () => activeHudId
 const hudsPath = getHudsDir()
 const app = express()
 
-app.use(
-  cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE']
-  })
-)
+// Only the app itself, localhost HUD dev servers and same-origin pages may call the API
+app.use(originGuard)
 
 const httpServer = createServer(app)
 export const io = new Server(httpServer, {
-  cors: { origin: '*' }
+  // Origin policy is enforced by allowRequest; reflect the origin for allowed handshakes
+  cors: { origin: true },
+  allowRequest: socketAllowRequest
 })
 
 app.use(express.json())
@@ -49,6 +47,8 @@ app.use(signedHudMiddleware)
 // The default mount must come first so it takes priority over the user huds folder
 app.use('/huds/default', express.static(getBuiltinHudDir()))
 app.use('/huds', express.static(hudsPath))
+// Browser-source overlays (AI Director overlay at /overlays/director/)
+app.use('/overlays', express.static(getOverlaysDir()))
 app.use('/api/uploads', express.static(uploadsPath))
 
 app.use('/api/huds', createHudRouter(io))
@@ -62,8 +62,9 @@ setupSockets(io)
 
 // Setup GSI Listener Server (Port 23415)
 const gsiApp = express()
-gsiApp.use(express.json())
-gsiApp.use(cors({ origin: '*' }))
+// CS2 posts without an Origin header; browsers on other sites are rejected
+gsiApp.use(originGuard)
+gsiApp.use(express.json({ limit: '5mb' }))
 gsiApp.use('/cs2', setupGSI(io)) // This is what the gsi cfg file sends data to
 
 const HUD_PORT = process.env.HUD_PORT || 1349

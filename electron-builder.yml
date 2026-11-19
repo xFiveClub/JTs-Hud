@@ -11,6 +11,7 @@ files:
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
   - 'resources/default-hud/**/*'
+  - 'resources/overlays/**/*'
 protocols:
   name: jtshudhmanager
   schemes:
@@ -46,4 +47,4 @@ npmRebuild: false
 publish:
   provider: github
   owner: JohnTimmermann
-  repo: JTs-Hud-Manager
+  repo: JTs-Hud

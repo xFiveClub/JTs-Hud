@@ -1,9 +1,15 @@
 import { Server, Socket } from 'socket.io'
 import { getHudConfig } from './domains/huds/hud.routes'
 import { getActiveHudId } from './server'
+import { director } from './director/director'
 
 export const setupSockets = (io: Server) => {
   io.on('connection', (socket: Socket) => {
+    // Director overlay asks for the current state when it (re)connects
+    socket.on('director:overlay:hello', () => {
+      socket.emit('director:overlay', director.getOverlayState())
+    })
+
     // HUD registration:
     socket.on('started', () => {
       socket.emit('readyToRegister')

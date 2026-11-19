@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, initial-scale=1" />
+    <title>JTs Hud — Director Overlay</title>
+    <!--
+      Director overlay: add as a separate Browser Source in OBS/vMix ON TOP of the HUD.
+        URL:  http://localhost:1349/overlays/director/
+        Size: 1920x1080, transparent
+
+      Optional query parameters:
+        ct=5d9cec  t=e8b04a     team colours (hex, no #)
+        top=150                 vertical offset of the clutch/execute banner (px)
+        bottom=250              vertical offset of the storyline + camera tag from the bottom (px)
+        scale=1                 overall size
+        preview=1               show sample widgets (to position the source)
+    -->
+    <style>
+      :root {
+        --ct: #5d9cec;
+        --t: #e8b04a;
+        --top: 150px;
+        --bottom: 250px;
+        --scale: 1;
+        --panel: rgba(12, 13, 18, 0.88);
+        --panel-edge: rgba(255, 255, 255, 0.08);
+        --text: #f4f4f5;
+        --dim: #a1a1aa;
+      }
+      @font-face {
+        font-family: 'Montserrat';
+        src: url('/huds/default/assets/Montserrat-Bold-c8289a87.ttf') format('truetype');
+        font-weight: 700;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: transparent;
+        font-family: 'Montserrat', 'Segoe UI', system-ui, sans-serif;
+        color: var(--text);
+      }
+      .stage {
+        position: absolute;
+        inset: 0;
+        transform: scale(var(--scale));
+        transform-origin: center;
+      }
+      .widget {
+        position: absolute;
+        opacity: 0;
+        transition:
+          opacity 0.35s ease,
+          transform 0.45s cubic-bezier(0.2, 0.9, 0.25, 1);
+        pointer-events: none;
+      }
+      .widget.show {
+        opacity: 1;
+      }
+      .side-ct {
+        --side: var(--ct);
+      }
+      .side-t {
+        --side: var(--t);
+      }
+
+      /* ---------- Clutch banner (top centre, under the scoreboard) ---------- */
+      #clutch {
+        top: var(--top);
+        left: 50%;
+        transform: translate(-50%, -16px);
+        display: flex;
+        align-items: stretch;
+        background: var(--panel);
+        border: 1px solid var(--panel-edge);
+        border-radius: 6px;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+      }
+      #clutch.show {
+        transform: translate(-50%, 0);
+      }
+      #clutch .tag {
+        background: var(--side);
+        color: #0b0b0e;
+        font-weight: 800;
+        font-size: 30px;
+        padding: 8px 18px;
+        letter-spacing: 1px;
+        display: flex;
+        align-items: center;
+      }
+      #clutch .body {
+        padding: 8px 20px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+      #clutch .label {
+        font-size: 13px;
+        letter-spacing: 3px;
+        color: var(--dim);
+        text-transform: uppercase;
+      }
+      #clutch .name {
+        font-size: 24px;
+        font-weight: 700;
+      }
+      #clutch .hp {
+        color: var(--dim);
+        font-size: 16px;
+        margin-left: 8px;
+      }
+
+      /* ---------- Execute chip (under the clutch banner) ---------- */
+      #execute {
+        top: calc(var(--top) + 78px);
+        left: 50%;
+        transform: translate(-50%, -10px);
+        background: var(--panel);
+        border-left: 4px solid var(--side);
+        border-radius: 4px;
+        padding: 6px 14px;
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+      }
+      #execute.show {
+        transform: translate(-50%, 0);
+      }
+
+      /* ---------- Freezetime focus card (right side) ---------- */
+      #focus {
+        top: 50%;
+        right: 40px;
+        width: 340px;
+        transform: translate(40px, -50%);
+        background: var(--panel);
+        border: 1px solid var(--panel-edge);
+        border-top: 4px solid var(--side);
+        border-radius: 8px;
+        padding: 18px 20px;
+        box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+      }
+      #focus.show {
+        transform: translate(0, -50%);
+      }
+      #focus .title {
+        font-size: 13px;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        color: var(--side);
+      }
+      #focus .name {
+        font-size: 34px;
+        font-weight: 800;
+        margin: 4px 0 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #focus .team {
+        color: var(--dim);
+        font-size: 15px;
+      }
+      #focus .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+        margin-top: 14px;
+      }
+      #focus .stat {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 4px;
+        padding: 6px 0;
+        text-align: center;
+      }
+      #focus .stat b {
+        display: block;
+        font-size: 22px;
+      }
+      #focus .stat span {
+        font-size: 11px;
+        letter-spacing: 2px;
+        color: var(--dim);
+      }
+      #focus .extra {
+        margin-top: 12px;
+        font-size: 14px;
+        color: var(--dim);
+      }
+
+      /* ---------- Storyline lower third ---------- */
+      #story {
+        bottom: var(--bottom);
+        left: 50%;
+        max-width: 1000px;
+        transform: translate(-50%, 16px);
+        display: flex;
+        align-items: center;
+        background: var(--panel);
+        border: 1px solid var(--panel-edge);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      #story.show {
+        transform: translate(-50%, 0);
+      }
+      #story .tag {
+        align-self: stretch;
+        display: flex;
+        align-items: center;
+        background: rgba(255, 255, 255, 0.08);
+        padding: 0 14px;
+        font-size: 12px;
+        letter-spacing: 3px;
+        color: var(--dim);
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      #story .text {
+        padding: 10px 18px;
+        font-size: 19px;
+        line-height: 1.3;
+      }
+
+      /* ---------- Camera reason tag ---------- */
+      #reason {
+        bottom: calc(var(--bottom) + 84px);
+        left: 50%;
+        transform: translate(-50%, 8px);
+        background: rgba(12, 13, 18, 0.75);
+        border-radius: 4px;
+        padding: 4px 12px;
+        font-size: 14px;
+        color: var(--dim);
+        white-space: nowrap;
+      }
+      #reason.show {
+        transform: translate(-50%, 0);
+      }
+      #reason b {
+        color: var(--side);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <div id="clutch" class="widget">
+        <div class="tag">1v<span data-f="vs"></span></div>
+        <div class="body">
+          <div class="label">Clutch</div>
+          <div><span class="name" data-f="name"></span><span class="hp"><span data-f="hp"></span> HP</span></div>
+        </div>
+      </div>
+
+      <div id="execute" class="widget"><span data-f="text"></span></div>
+
+      <div id="focus" class="widget">
+        <div class="title" data-f="title"></div>
+        <div class="name" data-f="name"></div>
+        <div class="team" data-f="team"></div>
+        <div class="stats">
+          <div class="stat"><b data-f="kills"></b><span>K</span></div>
+          <div class="stat"><b data-f="deaths"></b><span>D</span></div>
+          <div class="stat"><b data-f="assists"></b><span>A</span></div>
+          <div class="stat"><b data-f="mvps"></b><span>MVP</span></div>
+        </div>
+        <div class="extra" data-f="extra"></div>
+      </div>
+
+      <div id="story" class="widget">
+        <div class="tag">Director's read</div>
+        <div class="text" data-f="text"></div>
+      </div>
+
+      <div id="reason" class="widget">Camera: <b data-f="name"></b> · <span data-f="reason"></span></div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      ;(function () {
+        const q = new URLSearchParams(location.search)
+        const root = document.documentElement.style
+        const hex = (v) => (/^[0-9a-f]{3,8}$/i.test(v || '') ? '#' + v : null)
+        if (hex(q.get('ct'))) root.setProperty('--ct', hex(q.get('ct')))
+        if (hex(q.get('t'))) root.setProperty('--t', hex(q.get('t')))
+        if (q.get('top')) root.setProperty('--top', Number(q.get('top')) + 'px')
+        if (q.get('bottom')) root.setProperty('--bottom', Number(q.get('bottom')) + 'px')
+        if (q.get('scale')) root.setProperty('--scale', Number(q.get('scale')) || 1)
+
+        const el = (id) => document.getElementById(id)
+        const fill = (node, data) => {
+          for (const f of node.querySelectorAll('[data-f]')) {
+            const v = data[f.dataset.f]
+            f.textContent = v === undefined || v === null ? '' : String(v)
+          }
+        }
+        // Keep the last content while fading out so the text doesn't vanish mid-animation
+        const show = (id, data, side) => {
+          const node = el(id)
+          if (data) {
+            fill(node, data)
+            node.classList.remove('side-ct', 'side-t')
+            if (side) node.classList.add(side === 'CT' ? 'side-ct' : 'side-t')
+            node.classList.add('show')
+          } else {
+            node.classList.remove('show')
+          }
+        }
+
+        const render = (s) => {
+          if (!s || !s.active) {
+            ;['clutch', 'execute', 'focus', 'story', 'reason'].forEach((id) => show(id, null))
+            return
+          }
+          show('clutch', s.clutch, s.clutch && s.clutch.side)
+          show('execute', s.execute, s.execute && s.execute.side)
+          if (s.focusCard) {
+            const c = s.focusCard
+            show(
+              'focus',
+              {
+                ...c,
+                team: s.teams[c.side] || (c.side === 'CT' ? 'Counter-Terrorists' : 'Terrorists'),
+                extra: [c.primary, '$' + c.money].filter(Boolean).join(' · ')
+              },
+              c.side
+            )
+          } else show('focus', null)
+          show('story', s.storyline ? { text: s.storyline } : null)
+          show('reason', s.onCamera && s.onCamera.reason ? s.onCamera : null, s.onCamera && s.onCamera.side)
+        }
+
+        if (q.get('preview') === '1') {
+          render({
+            active: true,
+            teams: { CT: 'Team Blue', T: 'Team Gold' },
+            clutch: { name: 'PlayerOne', side: 'CT', vs: 3, hp: 54 },
+            execute: { side: 'T', text: 'Execute · B site' },
+            focusCard: { name: 'PlayerTwo', side: 'T', kills: 18, deaths: 9, assists: 4, mvps: 3, money: 4750, primary: 'ak47', title: 'Player to watch' },
+            storyline: 'Gold have lost three in a row and are forcing: expect a fast B hit through the smokes.',
+            onCamera: { name: 'PlayerOne', side: 'CT', reason: 'enemies close, 1v3' }
+          })
+          return
+        }
+
+        const socket = io({ transports: ['websocket', 'polling'] })
+        socket.on('director:overlay', render)
+        socket.on('connect', () => socket.emit('director:overlay:hello'))
+        socket.on('refreshHUD', () => location.reload())
+      })()
+    </script>
+  </body>
+</html>

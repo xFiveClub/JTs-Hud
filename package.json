@@ -22,7 +22,9 @@
     "test:e2e": "electron-vite build && playwright test",
     "test:e2e:ui": "electron-vite build && playwright test --ui",
     "test:e2e:headed": "electron-vite build && playwright test --headed",
-    "test:e2e:smoke": "electron-vite build && playwright test e2e/app.spec.ts"
+    "test:e2e:smoke": "electron-vite build && playwright test e2e/app.spec.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
@@ -62,6 +64,7 @@
     "supabase": "^2.76.14",
     "typescript": "^5.9.3",
     "vite": "^7.2.6",
+    "vitest": "5.0.5",
     "vue": "^3.5.25",
     "vue-eslint-parser": "^10.2.0",
     "vue-tsc": "^3.1.6"
