@@ -49,7 +49,7 @@ app.whenReady().then(() => {
 async function checkForUpdate(): Promise<void> {
   try {
     const response = await net.fetch(
-      'https://api.github.com/repos/JohnTimmermann/JTs-Hud/releases/latest',
+      'https://api.github.com/repos/xFiveClub/JTs-Hud/releases/latest',
       { headers: { 'User-Agent': 'jts-hud-manager-electron' } }
     )
     if (!response.ok) return

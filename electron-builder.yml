@@ -19,6 +19,11 @@ protocols:
 win:
   executableName: JTs Hud Manager
   icon: icon.ico
+  # Installer (.exe) + portable zip for the GitHub release
+  target:
+    - nsis
+    - zip
+  artifactName: ${name}-${version}-win.${ext}
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
@@ -46,5 +51,5 @@ appImage:
 npmRebuild: false
 publish:
   provider: github
-  owner: JohnTimmermann
+  owner: xFiveClub
   repo: JTs-Hud

@@ -2,7 +2,7 @@
 
 A Counter-Strike 2 custom HUD and HUD manager (players, teams, matches, overlays) **plus an AI Director addon**: an automatic observer that moves the CS2 spectator camera like a professional broadcast observer, so a match can be produced without anyone on the observer seat.
 
-> **This is a community fork** of [JohnTimmermann/JTs-Hud](https://github.com/JohnTimmermann/JTs-Hud) (formerly OpenHud), maintained by **xfiveclub**. All the original HUD manager features are John Timmermann's work; this fork adds the [AI Director](#ai-director) and related changes listed in [Changes in this fork](#changes-in-this-fork). It is not the official release. Report issues with the AI Director here, and issues with the base HUD manager [upstream](https://github.com/JohnTimmermann/JTs-Hud/issues).
+> **This is a community fork** of [JohnTimmermann/JTs-Hud](https://github.com/JohnTimmermann/JTs-Hud) (formerly OpenHud), maintained by **xFiveClub**. All the original HUD manager features are John Timmermann's work; this fork adds the [AI Director](#ai-director) and related changes listed in [Changes in this fork](#changes-in-this-fork). It is not the official release. Report issues with the AI Director here, and issues with the base HUD manager [upstream](https://github.com/JohnTimmermann/JTs-Hud/issues).
 
 - Tech: Electron, Vue, Typescript, NodeJS/Express, Socketio, SQLite3
 - License: [GPL-3.0](LICENSE), same as upstream
@@ -47,7 +47,10 @@ _Disclaimer from the original author: A small portion of this is ai generated, a
 
 ## Installation
 
-1. Download the latest unpacked version or `.exe` installer from this repository's [Releases](../../releases/latest) page.
+1. Download `jts-hud-<version>-setup.exe` (installer) or `jts-hud-<version>-win.zip` (portable) from this repository's [Releases](../../releases/latest) page.
+2. Run the installer. The build is not code-signed, so Windows SmartScreen may show _"Windows protected your PC"_: click **More info → Run anyway**.
+
+The app checks this repository for new releases and shows an update icon in the sidebar when one is available.
 
 _Note: While the releases are for windows, electron builder does allow for linux and mac if needed_
 
@@ -56,7 +59,7 @@ _Note: While the releases are for windows, electron builder does allow for linux
 Requires Node.js 22+.
 
 ```bash
-git clone https://github.com/xfiveclub/JTs-Hud.git
+git clone https://github.com/xFiveClub/JTs-Hud.git
 cd JTs-Hud
 npm install          # also downloads Electron and rebuilds sqlite3 for it
 npm run dev          # run the app in development mode
@@ -367,6 +370,19 @@ npm run test:e2e     # builds the app and runs the Electron smoke test (Playwrig
 
 CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the end-to-end smoke test on every push and pull request.
 
+### Publishing a release
+
+Releases are built on a Windows runner (`.github/workflows/release.yml`) because `sqlite3` is a native module. Bump the version, then push a matching tag:
+
+```bash
+npm version 7.13.26-ai.2 --no-git-tag-version
+git commit -am "v7.13.26-ai.2"
+git tag v7.13.26-ai.2
+git push origin main --tags
+```
+
+The workflow checks that the tag matches `package.json`, runs the tests, builds the installer and portable zip, and publishes them as the latest release.
+
 Main code locations for the addon:
 
 | Path                                          | What                                                     |
@@ -390,15 +406,16 @@ The huds directory would be at: `C:\Users\jtmyt\jthm-huds`
 
 ## Changes in this fork
 
-Modified by xfiveclub, November 2026, relative to [JohnTimmermann/JTs-Hud](https://github.com/JohnTimmermann/JTs-Hud) v7.13.26:
+Modified by xFiveClub, November 2026, relative to [JohnTimmermann/JTs-Hud](https://github.com/JohnTimmermann/JTs-Hud) v7.13.26:
 
 - **Added** the AI Director: rule engine, optional LLM layer, director overlay, GSI record & replay, map zones, utility execute detection, look-ahead feed (`/cs2/lookahead`) and operator shortcuts (`Alt+D`, `Alt+L`, `Alt+N`).
 - **Added** an option in Spectator Binds to bind by Steam account id, which works for player names that start with a number.
 - **Changed** Spectator Binds and the director to share a single persistent telnet connection.
 - **Changed** the local servers from allowing any origin (CORS `*`) to an origin policy (see [Local API security](#local-api-security)).
-- **Changed** the update check and GitHub links from the old `JTs-Hud-Manager` name to `JTs-Hud`.
+- **Changed** the update check, release publishing and GitHub links to point to this fork (`xFiveClub/JTs-Hud`). Versions are numbered `<upstream version>-ai.<n>`, starting at `7.13.26-ai.1`.
+- **Added** a Windows release workflow that builds the installer and a portable zip on every version tag.
 - **Added** unit tests (Vitest), an Electron end-to-end smoke test (Playwright) and CI.
 
 ## License
 
-GPL-3.0, see [LICENSE](LICENSE). Original work © John Timmermann and contributors; AI Director addon © xfiveclub and contributors. Both are distributed under the same license.
+GPL-3.0, see [LICENSE](LICENSE). Original work © John Timmermann and contributors; AI Director addon © xFiveClub and contributors. Both are distributed under the same license.

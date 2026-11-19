@@ -1,0 +1,55 @@
+name: Release
+
+# Push a tag that matches package.json, e.g.:
+#   npm version 7.13.26-ai.2 --no-git-tag-version && git commit -am "v7.13.26-ai.2"
+#   git tag v7.13.26-ai.2 && git push origin main --tags
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Build Windows installer
+    # Native modules (sqlite3) must be built on Windows for a Windows app
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Tag must match package.json version
+        shell: bash
+        run: |
+          v=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF_NAME" != "v$v" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version v$v"
+            exit 1
+          fi
+
+      # Full install: downloads Electron and rebuilds sqlite3 for Electron on Windows
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Build installer and portable zip
+        run: npx electron-vite build && npx electron-builder --win --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      # Created with gh (not electron-builder) so it is always a full "latest" release,
+      # even for versions like 7.13.26-ai.1 that semver treats as pre-releases
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/*-setup.exe dist/*-win.zip \
+            --title "JTs Hud · AI Director $GITHUB_REF_NAME" \
+            --notes-file .github/release-notes.md \
+            --latest
